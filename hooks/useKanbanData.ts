@@ -2,26 +2,61 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
-import type { KanbanTask, Status, Frente } from "@/types"
+import { FRENTE_MAP } from "@/lib/frentes"
+import type { KanbanItem, KanbanTask, Status } from "@/types"
 
 export function useKanbanData(week: number) {
-  const [kanbanTasks, setKanbanTasks] = useState<KanbanTask[]>([])
-  const [frentes, setFrentes] = useState<Frente[]>([])
+  const [items, setItems] = useState<KanbanItem[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const [kRes, fRes] = await Promise.all([
-      supabase.from("kanban_tasks").select("*").eq("week", week).order("created_at"),
-      supabase.from("frentes").select("*").order("order_index"),
+
+    const [planRes, opRes] = await Promise.all([
+      // Fonte 1: tarefas do plano ativas nesta semana
+      supabase
+        .from("frente_tasks")
+        .select("id, name, status, frente_id, start_week, end_week")
+        .in("status", ["pending", "in-progress"])
+        .lte("start_week", week)
+        .gte("end_week", week),
+      // Fonte 2: tarefas operacionais da semana
+      supabase
+        .from("kanban_tasks")
+        .select("*")
+        .eq("week", week)
+        .order("created_at"),
     ])
-    if (kRes.data) setKanbanTasks(kRes.data as KanbanTask[])
-    if (fRes.data) setFrentes(fRes.data as Frente[])
+
+    const planItems: KanbanItem[] = (planRes.data ?? []).map((t) => ({
+      id: `plan_${t.id}`,
+      name: t.name,
+      status: t.status,
+      source: "plan" as const,
+      frente_id: t.frente_id,
+      frente_color: FRENTE_MAP[t.frente_id]?.color,
+      frente_name: FRENTE_MAP[t.frente_id]?.name,
+    }))
+
+    const opItems: KanbanItem[] = (opRes.data ?? []).map((t) => ({
+      id: t.id,
+      name: t.name,
+      status: t.status,
+      source: "operational" as const,
+      frente_id: t.frente_id ?? undefined,
+      frente_color: t.frente_id ? FRENTE_MAP[t.frente_id]?.color : undefined,
+      frente_name: t.frente_id ? FRENTE_MAP[t.frente_id]?.name : undefined,
+      deadline: t.deadline ?? undefined,
+      category: t.category ?? undefined,
+    }))
+
+    setItems([...planItems, ...opItems])
     setLoading(false)
   }, [week])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
+  // Real-time for kanban_tasks changes
   useEffect(() => {
     const channel = supabase
       .channel("kanban-changes")
@@ -29,9 +64,23 @@ export function useKanbanData(week: number) {
         fetchAll()
       })
       .subscribe()
-
     return () => { supabase.removeChannel(channel) }
   }, [fetchAll])
+
+  const moveItem = useCallback(async (itemId: string, newStatus: string) => {
+    const item = items.find((i) => i.id === itemId)
+    if (!item || item.status === newStatus) return
+
+    // Optimistic update
+    setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, status: newStatus } : i))
+
+    if (item.source === "plan") {
+      const realId = itemId.replace("plan_", "")
+      await supabase.from("frente_tasks").update({ status: newStatus }).eq("id", realId)
+    } else {
+      await supabase.from("kanban_tasks").update({ status: newStatus }).eq("id", itemId)
+    }
+  }, [items])
 
   const createTask = async (task: Omit<KanbanTask, "id" | "created_at">) => {
     const { error } = await supabase.from("kanban_tasks").insert(task)
@@ -51,9 +100,5 @@ export function useKanbanData(week: number) {
     return error
   }
 
-  const moveTask = async (id: string, newStatus: Status) => {
-    return updateTask(id, { status: newStatus })
-  }
-
-  return { kanbanTasks, frentes, loading, createTask, updateTask, deleteTask, moveTask, refetch: fetchAll }
+  return { items, loading, moveItem, createTask, updateTask, deleteTask, refetch: fetchAll }
 }

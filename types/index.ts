@@ -44,3 +44,17 @@ export interface KanbanTask {
   deadline: string | null
   created_at: string
 }
+
+export type TaskSource = 'plan' | 'operational'
+
+export interface KanbanItem {
+  id: string
+  name: string
+  status: string
+  source: TaskSource
+  frente_id?: string
+  frente_color?: string
+  frente_name?: string
+  deadline?: string
+  category?: string
+}

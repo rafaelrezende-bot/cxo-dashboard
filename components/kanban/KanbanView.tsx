@@ -5,7 +5,8 @@ import { DndContext, DragEndEvent, DragOverlay, PointerSensor, useSensor, useSen
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react"
 import { useKanbanData } from "@/hooks/useKanbanData"
 import { getCurrentWeek, getWeekStartDate, getWeekEndDate, formatShortDate } from "@/lib/dates"
-import type { Status, KanbanTask } from "@/types"
+import { FRENTE_MAP } from "@/lib/frentes"
+import type { Status, KanbanItem } from "@/types"
 import { KanbanColumn } from "./KanbanColumn"
 import { KanbanTaskModal } from "./KanbanTaskModal"
 import { DayView } from "./DayView"
@@ -20,8 +21,8 @@ export function KanbanView() {
     }
     return getCurrentWeek()
   })
-  const { kanbanTasks, frentes, loading, createTask, updateTask, deleteTask, moveTask } = useKanbanData(week)
-  const [modal, setModal] = useState<{ mode: "create" | "edit"; task?: KanbanTask; initialStatus?: Status } | null>(null)
+  const { items, loading, moveItem, createTask, updateTask, deleteTask } = useKanbanData(week)
+  const [modal, setModal] = useState<{ mode: "create" | "edit"; item?: KanbanItem; initialStatus?: Status } | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
@@ -36,19 +37,32 @@ export function KanbanView() {
     setActiveId(null)
     const { active, over } = event
     if (!over) return
-
-    const taskId = String(active.id)
+    const itemId = String(active.id)
     const newStatus = String(over.id) as Status
-
-    // Only process if dropped on a valid column
     if (!columns.includes(newStatus)) return
+    moveItem(itemId, newStatus)
+  }, [moveItem])
 
-    // Optimistic update
-    const task = kanbanTasks.find((t) => t.id === taskId)
-    if (task && task.status !== newStatus) {
-      moveTask(taskId, newStatus)
-    }
-  }, [kanbanTasks, moveTask])
+  // Build frentes list from FRENTE_MAP for the modal
+  const frentes = Object.entries(FRENTE_MAP).map(([id, { color, name }]) => ({
+    id, name, color, order_index: 0,
+  }))
+
+  // Filter operational tasks for DayView (plan tasks don't have deadlines in kanban context)
+  const opTasksForDayView = items
+    .filter((i) => i.source === "operational")
+    .map((i) => ({
+      id: i.id,
+      name: i.name,
+      status: i.status as Status,
+      deadline: i.deadline || null,
+      category: (i.category || null) as "comercial" | "cliente" | "interno" | "admin" | null,
+      frente_id: i.frente_id || null,
+      frente_auto_classified: false,
+      frente_manual_override: false,
+      week,
+      created_at: "",
+    }))
 
   if (loading) {
     return (
@@ -58,7 +72,6 @@ export function KanbanView() {
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="bg-brand-surface border border-brand-border rounded-xl p-4 space-y-3">
               <div className="h-4 w-24 bg-brand-surface2 rounded animate-pulse" />
-              <div className="h-16 bg-brand-surface2 rounded-lg animate-pulse" />
               <div className="h-16 bg-brand-surface2 rounded-lg animate-pulse" />
             </div>
           ))}
@@ -102,10 +115,7 @@ export function KanbanView() {
             <KanbanColumn
               key={status}
               status={status}
-              tasks={kanbanTasks.filter((t) => t.status === status)}
-              frentes={frentes}
-              onClickTask={(task) => setModal({ mode: "edit", task })}
-              onDeleteTask={(id) => deleteTask(id)}
+              items={items.filter((i) => i.status === status)}
               onAddTask={() => setModal({ mode: "create", initialStatus: status })}
             />
           ))}
@@ -113,34 +123,52 @@ export function KanbanView() {
         <DragOverlay>
           {activeId ? (
             <div className="bg-brand-surface2 border border-brand-accent rounded-lg p-3 shadow-lg opacity-90 text-sm text-brand-text">
-              {kanbanTasks.find((t) => t.id === activeId)?.name || ""}
+              {items.find((i) => i.id === activeId)?.name || ""}
             </div>
           ) : null}
         </DragOverlay>
       </DndContext>
 
-      {/* Day View */}
-      <DayView tasks={kanbanTasks} week={week} />
+      {/* Day View — only operational tasks */}
+      <DayView tasks={opTasksForDayView} week={week} />
 
-      {/* Modal */}
+      {/* Modal — only creates/edits operational tasks (kanban_tasks) */}
       {modal && (
         <KanbanTaskModal
           mode={modal.mode}
-          initialName={modal.task?.name}
-          initialStatus={modal.initialStatus || modal.task?.status}
-          initialCategory={modal.task?.category}
-          initialFrenteId={modal.task?.frente_id}
-          initialDeadline={modal.task?.deadline}
+          initialName={modal.item?.source === "operational" ? modal.item.name : undefined}
+          initialStatus={modal.initialStatus || (modal.item?.status as Status)}
+          initialCategory={modal.item?.source === "operational" ? (modal.item.category as "comercial" | "cliente" | "interno" | "admin" | null) : null}
+          initialFrenteId={modal.item?.frente_id || null}
+          initialDeadline={modal.item?.deadline || null}
           frentes={frentes}
           onSave={(data) => {
             if (modal.mode === "create") {
-              createTask({ ...data, week, updated_at: new Date().toISOString() } as unknown as Omit<KanbanTask, "id" | "created_at">)
-            } else if (modal.task) {
-              updateTask(modal.task.id, data)
+              createTask({
+                name: data.name,
+                status: data.status,
+                category: data.category,
+                frente_id: data.frente_id,
+                frente_auto_classified: data.frente_auto_classified,
+                frente_manual_override: data.frente_manual_override,
+                week,
+                deadline: data.deadline,
+                updated_at: new Date().toISOString(),
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              } as any)
+            } else if (modal.item && modal.item.source === "operational") {
+              updateTask(modal.item.id, {
+                name: data.name,
+                status: data.status,
+                category: data.category,
+                frente_id: data.frente_id,
+                deadline: data.deadline,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              } as any)
             }
             setModal(null)
           }}
-          onDelete={modal.task ? () => { deleteTask(modal.task!.id); setModal(null) } : undefined}
+          onDelete={modal.item?.source === "operational" ? () => { deleteTask(modal.item!.id); setModal(null) } : undefined}
           onClose={() => setModal(null)}
         />
       )}

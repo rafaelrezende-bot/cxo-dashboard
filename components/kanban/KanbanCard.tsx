@@ -2,18 +2,13 @@
 
 import { useDraggable } from "@dnd-kit/core"
 import { CSS } from "@dnd-kit/utilities"
-import { X } from "lucide-react"
-import type { KanbanTask, Frente } from "@/types"
+import type { KanbanItem } from "@/types"
 
 interface KanbanCardProps {
-  task: KanbanTask
-  frentes: Frente[]
-  onClick: () => void
-  onDelete: () => void
+  item: KanbanItem
 }
 
-function getDeadlineColor(deadline: string | null): string {
-  if (!deadline) return ""
+function getDeadlineColor(deadline: string): string {
   const d = new Date(deadline + "T23:59:59")
   const now = new Date()
   const diffDays = Math.floor((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
@@ -23,59 +18,59 @@ function getDeadlineColor(deadline: string | null): string {
   return "text-brand-muted bg-brand-surface2"
 }
 
-export function KanbanCard({ task, frentes, onClick, onDelete }: KanbanCardProps) {
+export function KanbanCard({ item }: KanbanCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: task.id,
+    id: item.id,
   })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    opacity: isDragging ? 0.5 : 1,
-    touchAction: "none" as const,
-  }
-
-  const frente = task.frente_id ? frentes.find((f) => f.id === task.frente_id) : null
 
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        opacity: isDragging ? 0.5 : 1,
+        touchAction: "none",
+        borderLeft: item.source === "plan" && item.frente_color
+          ? `3px solid ${item.frente_color}`
+          : "3px solid transparent",
+      }}
       {...listeners}
       {...attributes}
-      className="group bg-brand-surface2 border border-brand-border rounded-lg p-3 mb-2 cursor-grab active:cursor-grabbing hover:border-brand-muted/50 transition-colors"
-      onClick={(e) => { e.stopPropagation(); onClick() }}
+      className="bg-brand-surface2 rounded-lg p-3 mb-2 cursor-grab active:cursor-grabbing hover:border-brand-muted/50 transition-colors"
     >
-      {frente && (
-        <div className="w-full h-0.5 rounded-full mb-2" style={{ backgroundColor: frente.color }} />
-      )}
-      <p className={`text-sm text-brand-text leading-snug mb-2 ${task.status === "done" ? "line-through opacity-50" : ""}`}>
-        {task.name}
+      <p className={`text-sm text-brand-text leading-snug ${item.status === "done" ? "line-through opacity-50" : ""}`}>
+        {item.name}
       </p>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {task.category && (
-            <span className="text-[10px] text-brand-muted bg-brand-surface px-1.5 py-0.5 rounded capitalize">
-              {task.category}
-            </span>
-          )}
-          {frente && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: frente.color, backgroundColor: frente.color + "15" }}>
-              {frente.name.length > 15 ? frente.name.slice(0, 15) + "…" : frente.name}
-            </span>
-          )}
-          {task.deadline && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded ${getDeadlineColor(task.deadline)}`}>
-              {new Date(task.deadline + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}
-            </span>
-          )}
-        </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="opacity-0 group-hover:opacity-100 text-brand-muted hover:text-brand-red p-0.5 transition-opacity"
-          aria-label="Excluir tarefa"
-        >
-          <X size={12} />
-        </button>
+
+      <div className="flex items-center gap-1.5 flex-wrap mt-2">
+        {/* Badge de frente — tarefas do plano */}
+        {item.source === "plan" && item.frente_name && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded"
+            style={{ backgroundColor: (item.frente_color || "#666") + "33", color: item.frente_color }}
+          >
+            {item.frente_name}
+          </span>
+        )}
+
+        {/* Categoria — tarefas operacionais */}
+        {item.source === "operational" && item.category && (
+          <span className="text-[10px] text-brand-muted bg-brand-surface px-1.5 py-0.5 rounded capitalize">
+            {item.category}
+          </span>
+        )}
+
+        {/* Deadline — tarefas operacionais */}
+        {item.deadline && (
+          <span className={`text-[10px] px-1.5 py-0.5 rounded ${getDeadlineColor(item.deadline)}`}>
+            {new Date(item.deadline + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}
+          </span>
+        )}
+
+        {/* Source indicator */}
+        {item.source === "plan" && (
+          <span className="text-[9px] text-brand-muted bg-brand-surface px-1 py-0.5 rounded">plano</span>
+        )}
       </div>
     </div>
   )

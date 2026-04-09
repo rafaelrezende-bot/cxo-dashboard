@@ -44,7 +44,13 @@ export function usePlanData() {
     return error
   }
 
+  async function deleteFrenteTask(id: string) {
+    const { error } = await supabase.from("frente_tasks").delete().eq("id", id)
+    if (!error) fetchAll()
+    return error
+  }
+
   useEffect(() => { fetchAll() }, [])
 
-  return { frentes, frenteTasks, adHocTasks, loading, error, updateFrenteTask, updateAdHocTask, refetch: fetchAll }
+  return { frentes, frenteTasks, adHocTasks, loading, error, updateFrenteTask, updateAdHocTask, deleteFrenteTask, refetch: fetchAll }
 }

@@ -5,7 +5,7 @@ import { StatsBar } from "./StatsBar"
 import { GanttTimeline } from "./GanttTimeline"
 
 export function GanttView() {
-  const { frentes, frenteTasks, adHocTasks, loading, error, updateFrenteTask, updateAdHocTask } = usePlanData()
+  const { frentes, frenteTasks, adHocTasks, loading, error, updateFrenteTask, updateAdHocTask, deleteFrenteTask } = usePlanData()
 
   if (error) {
     return (
@@ -46,6 +46,7 @@ export function GanttView() {
         frenteTasks={frenteTasks}
         adHocTasks={adHocTasks}
         onUpdateFrenteTask={(id, updates) => updateFrenteTask(id, updates)}
+        onDeleteFrenteTask={(id) => deleteFrenteTask(id)}
         onUpdateAdHocTask={(id, updates) => updateAdHocTask(id, updates)}
       />
     </div>

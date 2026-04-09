@@ -12,6 +12,7 @@ interface GanttTimelineProps {
   frenteTasks: FrenteTask[]
   adHocTasks: AdHocTask[]
   onUpdateFrenteTask: (id: string, updates: Partial<FrenteTask>) => void
+  onDeleteFrenteTask: (id: string) => void
   onUpdateAdHocTask: (id: string, updates: Partial<AdHocTask>) => void
 }
 
@@ -27,7 +28,7 @@ function getBarColor(status: Status): string {
   return map[status]
 }
 
-export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrenteTask, onUpdateAdHocTask }: GanttTimelineProps) {
+export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrenteTask, onDeleteFrenteTask, onUpdateAdHocTask }: GanttTimelineProps) {
   const currentWeek = getCurrentWeek()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
     if (typeof window !== "undefined") {
@@ -36,12 +37,13 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
     }
     return {}
   })
-  const [editingTask, setEditingTask] = useState<{
-    id: string
-    name: string
-    status: Status
-    note: string
-    type: "frente" | "adhoc"
+
+  // Full task editing for frente_tasks
+  const [editingFrenteTask, setEditingFrenteTask] = useState<FrenteTask | null>(null)
+
+  // Simple status+note editing for adhoc_tasks (unchanged)
+  const [editingAdHoc, setEditingAdHoc] = useState<{
+    id: string; name: string; status: Status; note: string
   } | null>(null)
 
   const toggleCollapse = useCallback((frenteId: string) => {
@@ -52,23 +54,10 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
     })
   }, [])
 
-  const handleSave = useCallback(
-    (status: Status, note: string) => {
-      if (!editingTask) return
-      if (editingTask.type === "frente") {
-        onUpdateFrenteTask(editingTask.id, { status, note })
-      } else {
-        onUpdateAdHocTask(editingTask.id, { status, note })
-      }
-      setEditingTask(null)
-    },
-    [editingTask, onUpdateFrenteTask, onUpdateAdHocTask]
-  )
-
   return (
     <div className="bg-brand-surface border border-brand-border rounded-xl overflow-hidden">
       {/* Month headers */}
-      <div className="grid" style={{ gridTemplateColumns: "220px 1fr" }}>
+      <div className="grid" style={{ gridTemplateColumns: "minmax(200px, auto) 1fr" }}>
         <div className="bg-brand-surface2 border-b border-r border-brand-border px-4 py-2" />
         <div className="grid grid-cols-3 border-b border-brand-border">
           {([1, 2, 3] as const).map((m) => (
@@ -80,7 +69,7 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
       </div>
 
       {/* Week headers */}
-      <div className="grid" style={{ gridTemplateColumns: "220px 1fr" }}>
+      <div className="grid" style={{ gridTemplateColumns: "minmax(200px, auto) 1fr" }}>
         <div className="bg-brand-surface2 border-b border-r border-brand-border px-4 py-2 text-[11px] text-brand-muted">
           Frente / Tarefa
         </div>
@@ -114,20 +103,19 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
             {/* Frente header */}
             <div
               className="grid cursor-pointer hover:bg-brand-surface2/50 transition-colors"
-              style={{ gridTemplateColumns: "220px 1fr" }}
+              style={{ gridTemplateColumns: "minmax(200px, auto) 1fr" }}
               onClick={() => toggleCollapse(frente.id)}
             >
               <div className="flex items-center gap-2 px-4 py-3 border-b border-r border-brand-border">
                 <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: frente.color }} />
-                {isCollapsed ? <ChevronRight size={14} className="text-brand-muted" /> : <ChevronDown size={14} className="text-brand-muted" />}
-                <span className="text-sm font-medium text-brand-text truncate">{frente.name}</span>
-                <span className="ml-auto text-[10px] text-brand-muted">{progress}%</span>
-                <div className="w-12 h-1.5 bg-brand-border rounded-full overflow-hidden">
+                {isCollapsed ? <ChevronRight size={14} className="text-brand-muted flex-shrink-0" /> : <ChevronDown size={14} className="text-brand-muted flex-shrink-0" />}
+                <span className="text-sm font-medium text-brand-text whitespace-normal break-words" title={frente.name}>{frente.name}</span>
+                <span className="ml-auto text-[10px] text-brand-muted flex-shrink-0">{progress}%</span>
+                <div className="w-12 h-1.5 bg-brand-border rounded-full overflow-hidden flex-shrink-0">
                   <div className="h-full bg-brand-green rounded-full transition-all" style={{ width: `${progress}%` }} />
                 </div>
               </div>
               <div className="border-b border-brand-border relative">
-                {/* Current week marker */}
                 <div
                   className="absolute top-0 bottom-0 w-px bg-brand-red z-10"
                   style={{ left: `${((currentWeek - 0.5) / 12) * 100}%` }}
@@ -135,27 +123,25 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
               </div>
             </div>
 
-            {/* Tasks */}
+            {/* Frente tasks */}
             {!isCollapsed &&
               tasks.map((task) => (
                 <div
                   key={task.id}
                   className="grid cursor-pointer hover:bg-brand-surface2/30 transition-colors"
-                  style={{ gridTemplateColumns: "220px 1fr" }}
-                  onClick={() => setEditingTask({ id: task.id, name: task.name, status: task.status, note: task.note, type: "frente" })}
+                  style={{ gridTemplateColumns: "minmax(200px, auto) 1fr" }}
+                  onClick={() => setEditingFrenteTask(task)}
                 >
                   <div className="flex items-center gap-2 px-4 py-2.5 border-b border-r border-brand-border pl-8">
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_CONFIG[task.status].dotClass}`} />
-                    <span className="text-xs text-brand-text truncate">{task.name}</span>
+                    <span className="text-xs text-brand-text whitespace-normal break-words" title={task.name}>{task.name}</span>
                     {task.note && <FileText size={10} className="text-brand-muted flex-shrink-0" />}
                   </div>
                   <div className="relative border-b border-brand-border">
-                    {/* Current week marker */}
                     <div
                       className="absolute top-0 bottom-0 w-px bg-brand-red/50 z-10"
                       style={{ left: `${((currentWeek - 0.5) / 12) * 100}%` }}
                     />
-                    {/* Task bar */}
                     <div className="h-full flex items-center px-1">
                       <div
                         className={`h-5 rounded ${getBarColor(task.status)} transition-all`}
@@ -184,13 +170,13 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
                   <div
                     key={task.id}
                     className="grid cursor-pointer hover:bg-brand-surface2/30 transition-colors"
-                    style={{ gridTemplateColumns: "220px 1fr" }}
-                    onClick={() => setEditingTask({ id: task.id, name: task.name, status: task.status, note: task.note, type: "adhoc" })}
+                    style={{ gridTemplateColumns: "minmax(200px, auto) 1fr" }}
+                    onClick={() => setEditingAdHoc({ id: task.id, name: task.name, status: task.status, note: task.note })}
                   >
                     <div className="flex items-center gap-2 px-4 py-2.5 border-b border-r border-brand-border pl-8">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_CONFIG[task.status].dotClass}`} />
-                      <span className="text-xs text-brand-text truncate italic">{task.name}</span>
-                      <span className={`text-[9px] px-1 rounded ${task.origin === "proativa" ? "text-brand-accent bg-brand-accent/10" : "text-brand-orange bg-brand-orange/10"}`}>
+                      <span className="text-xs text-brand-text whitespace-normal break-words italic" title={task.name}>{task.name}</span>
+                      <span className={`text-[9px] px-1 rounded flex-shrink-0 ${task.origin === "proativa" ? "text-brand-accent bg-brand-accent/10" : "text-brand-orange bg-brand-orange/10"}`}>
                         {task.origin}
                       </span>
                     </div>
@@ -232,16 +218,86 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
         </div>
       </div>
 
-      {/* Edit modal */}
-      {editingTask && (
+      {/* Full edit modal for frente_tasks */}
+      {editingFrenteTask && (
         <TaskEditModal
-          taskName={editingTask.name}
-          currentStatus={editingTask.status}
-          currentNote={editingTask.note}
-          onSave={handleSave}
-          onClose={() => setEditingTask(null)}
+          task={editingFrenteTask}
+          onSave={(updates) => {
+            onUpdateFrenteTask(editingFrenteTask.id, updates)
+            setEditingFrenteTask(null)
+          }}
+          onDelete={() => {
+            onDeleteFrenteTask(editingFrenteTask.id)
+            setEditingFrenteTask(null)
+          }}
+          onClose={() => setEditingFrenteTask(null)}
         />
       )}
+
+      {/* Simple adhoc edit modal (status + note only) */}
+      {editingAdHoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setEditingAdHoc(null)}>
+          <div className="bg-brand-surface border border-brand-border rounded-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-brand-text font-semibold text-base whitespace-normal break-words">{editingAdHoc.name}</h3>
+              <button onClick={() => setEditingAdHoc(null)} className="text-brand-muted hover:text-brand-text p-1 flex-shrink-0">
+                <span className="text-lg leading-none">&times;</span>
+              </button>
+            </div>
+            <span className="text-[10px] text-brand-muted bg-brand-surface2 px-2 py-0.5 rounded mb-4 inline-block">Tarefa ad-hoc</span>
+
+            <AdHocEditForm
+              initialStatus={editingAdHoc.status}
+              initialNote={editingAdHoc.note}
+              onSave={(status, note) => {
+                onUpdateAdHocTask(editingAdHoc.id, { status, note })
+                setEditingAdHoc(null)
+              }}
+              onClose={() => setEditingAdHoc(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+// Inline sub-component to avoid separate file for simple status+note edit
+function AdHocEditForm({ initialStatus, initialNote, onSave, onClose }: {
+  initialStatus: Status; initialNote: string
+  onSave: (status: Status, note: string) => void; onClose: () => void
+}) {
+  const [status, setStatus] = useState<Status>(initialStatus)
+  const [note, setNote] = useState(initialNote)
+
+  return (
+    <>
+      <label className="block text-[11px] text-brand-muted uppercase tracking-wider mb-2 mt-3">Status</label>
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        {(Object.entries(STATUS_CONFIG) as [Status, typeof STATUS_CONFIG[Status]][]).map(([key, cfg]) => (
+          <button
+            key={key}
+            onClick={() => setStatus(key)}
+            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+              status === key ? "border-brand-accent bg-brand-surface2 text-brand-text" : "border-brand-border text-brand-muted hover:text-brand-text"
+            }`}
+          >
+            <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${cfg.dotClass}`} />{cfg.label}
+          </button>
+        ))}
+      </div>
+      <label className="block text-[11px] text-brand-muted uppercase tracking-wider mb-1">Nota</label>
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={3}
+        className="w-full bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text placeholder:text-brand-muted focus:outline-none focus:border-brand-accent resize-none"
+        placeholder="Adicionar nota..."
+      />
+      <div className="flex justify-end gap-2 mt-4">
+        <button onClick={onClose} className="px-4 py-2 text-sm text-brand-muted hover:text-brand-text rounded-lg">Cancelar</button>
+        <button onClick={() => onSave(status, note)} className="px-4 py-2 text-sm font-medium bg-brand-accent text-white rounded-lg hover:opacity-90">Salvar</button>
+      </div>
+    </>
   )
 }

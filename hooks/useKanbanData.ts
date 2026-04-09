@@ -56,16 +56,73 @@ export function useKanbanData(week: number) {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  // Real-time for kanban_tasks changes
+  // Real-time: kanban_tasks — granular INSERT/UPDATE/DELETE
   useEffect(() => {
-    const channel = supabase
-      .channel("kanban-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "kanban_tasks" }, () => {
-        fetchAll()
-      })
+    const kanbanChannel = supabase
+      .channel("kanban-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "kanban_tasks" },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            const t = payload.new as KanbanTask
+            if (t.week === week) {
+              const newItem: KanbanItem = {
+                id: t.id,
+                name: t.name,
+                status: t.status,
+                source: "operational",
+                frente_id: t.frente_id ?? undefined,
+                frente_color: t.frente_id ? FRENTE_MAP[t.frente_id]?.color : undefined,
+                frente_name: t.frente_id ? FRENTE_MAP[t.frente_id]?.name : undefined,
+                deadline: t.deadline ?? undefined,
+                category: t.category ?? undefined,
+              }
+              setItems((prev) => [...prev, newItem])
+            }
+          }
+          if (payload.eventType === "UPDATE") {
+            const t = payload.new as KanbanTask
+            setItems((prev) =>
+              prev.map((item) =>
+                item.id === t.id
+                  ? { ...item, status: t.status, name: t.name, deadline: t.deadline ?? undefined, category: t.category ?? undefined }
+                  : item
+              )
+            )
+          }
+          if (payload.eventType === "DELETE") {
+            const oldId = (payload.old as { id: string }).id
+            setItems((prev) => prev.filter((item) => item.id !== oldId))
+          }
+        }
+      )
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [fetchAll])
+
+    // Real-time: frente_tasks — reflect plan status changes in kanban
+    const planChannel = supabase
+      .channel("plan-realtime")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "frente_tasks" },
+        (payload) => {
+          const t = payload.new as { id: string; status: string; name: string }
+          setItems((prev) =>
+            prev.map((item) =>
+              item.id === `plan_${t.id}`
+                ? { ...item, status: t.status, name: t.name }
+                : item
+            )
+          )
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(kanbanChannel)
+      supabase.removeChannel(planChannel)
+    }
+  }, [week])
 
   const moveItem = useCallback(async (itemId: string, newStatus: string) => {
     const item = items.find((i) => i.id === itemId)

@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { X, Trash2 } from "lucide-react"
 import type { Status } from "@/types"
 import { STATUS_CONFIG } from "@/lib/status"
-import { FRENTE_OPTIONS } from "@/lib/frentes"
+import { FRENTE_MAP, FRENTE_OPTIONS } from "@/lib/frentes"
 
 export interface TaskModalData {
   name: string
@@ -37,6 +37,46 @@ export function TaskModal({ mode, taskType, initialData, onSave, onDelete, onClo
   const [category, setCategory] = useState(initialData?.category || "")
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [suggestion, setSuggestion] = useState<{ frente_id: string; name: string } | null>(null)
+  const [classifying, setClassifying] = useState(false)
+
+  // Auto-classify on name change (create mode only, operational tasks)
+  useEffect(() => {
+    if (mode !== "create" || !name || name.length < 10) {
+      setSuggestion(null)
+      return
+    }
+    // Don't classify if user already picked a frente manually
+    if (frenteId) return
+
+    const timer = setTimeout(async () => {
+      setClassifying(true)
+      try {
+        const res = await fetch("/api/classify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ taskName: name }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.frente_id && data.confidence > 0.5) {
+            setSuggestion({
+              frente_id: data.frente_id,
+              name: FRENTE_MAP[data.frente_id]?.name ?? data.frente_id,
+            })
+          } else {
+            setSuggestion(null)
+          }
+        }
+      } catch {
+        setSuggestion(null)
+      } finally {
+        setClassifying(false)
+      }
+    }, 600)
+
+    return () => clearTimeout(timer)
+  }, [name, mode, frenteId])
 
   const handleSave = async () => {
     if (!name.trim() || saving) return
@@ -103,6 +143,28 @@ export function TaskModal({ mode, taskType, initialData, onSave, onDelete, onClo
           placeholder="Descreva a tarefa..."
           autoFocus
         />
+
+        {/* AI suggestion — create mode only */}
+        {mode === "create" && suggestion && !frenteId && (
+          <div className="flex items-center gap-2 text-xs mt-1.5 px-1">
+            <span className="text-brand-muted">Sugestão:</span>
+            <span
+              className="font-medium"
+              style={{ color: FRENTE_MAP[suggestion.frente_id]?.color }}
+            >
+              {suggestion.name}
+            </span>
+            <button
+              onClick={() => { setFrenteId(suggestion.frente_id); setSuggestion(null) }}
+              className="text-brand-muted underline hover:text-brand-text"
+            >
+              Usar
+            </button>
+          </div>
+        )}
+        {mode === "create" && classifying && (
+          <p className="text-[10px] text-brand-muted mt-1 px-1">Classificando...</p>
+        )}
 
         {/* Frente */}
         <label className="block text-[11px] text-brand-muted uppercase tracking-wider mb-1 mt-4">

@@ -1,120 +1,112 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import * as fs from "fs"
-import * as path from "path"
+import Anthropic from "@anthropic-ai/sdk"
 
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  return createClient(url, key)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  )
 }
 
 function getCurrentWeek(): number {
-  const start = new Date((process.env.PLAN_START_DATE || "2026-04-06") + "T00:00:00")
-  const now = new Date()
-  const diffDays = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
-  return Math.max(1, Math.min(12, Math.floor(diffDays / 7) + 1))
+  const startDate = new Date("2026-04-06")
+  const today = new Date()
+  const diffMs = today.getTime() - startDate.getTime()
+  const diffWeeks = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000))
+  return Math.max(1, Math.min(12, diffWeeks + 1))
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   // Auth check
   const authHeader = req.headers.get("authorization")
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && cronSecret !== "cole_aqui" && authHeader !== `Bearer ${cronSecret}`) {
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const supabase = getSupabaseAdmin()
-  const week = getCurrentWeek()
+  const supabase = getSupabase()
 
-  // Fetch all data
-  const [ftRes, ahRes, kRes] = await Promise.all([
-    supabase.from("frente_tasks").select("*"),
-    supabase.from("adhoc_tasks").select("*"),
-    supabase.from("kanban_tasks").select("*").eq("week", week),
-  ])
+  // 1. Read current state
+  const [{ data: frentes }, { data: frenteTasks }, { data: adhocTasks }, { data: kanbanTasks }] =
+    await Promise.all([
+      supabase.from("frentes").select("*").order("order_index"),
+      supabase.from("frente_tasks").select("*"),
+      supabase.from("adhoc_tasks").select("*"),
+      supabase.from("kanban_tasks").select("*"),
+    ])
 
-  const frenteTasks = ftRes.data || []
-  const adHocTasks = ahRes.data || []
-  const kanbanTasks = kRes.data || []
-
-  // Apply progression rules
-  let updatesApplied = 0
-  const statusRank: Record<string, number> = { pending: 0, "in-progress": 1, done: 2, blocked: 3 }
-  const changes: string[] = []
-
-  for (const kt of kanbanTasks) {
-    if (!kt.frente_id) continue
-
-    // Match frente_tasks
-    for (const ft of frenteTasks) {
-      if (ft.frente_id !== kt.frente_id) continue
-      if (ft.name.toLowerCase().includes(kt.name.toLowerCase().slice(0, 15)) || kt.name.toLowerCase().includes(ft.name.toLowerCase().slice(0, 15))) {
-        const currentRank = statusRank[ft.status] ?? 0
-        const newRank = statusRank[kt.status] ?? 0
-        if (newRank > currentRank && kt.status !== "blocked") {
-          await supabase.from("frente_tasks").update({ status: kt.status }).eq("id", ft.id)
-          changes.push(`${ft.name}: ${ft.status} → ${kt.status}`)
-          updatesApplied++
-        }
-        if (kt.status === "blocked" && ft.status !== "blocked" && ft.status !== "done") {
-          await supabase.from("frente_tasks").update({ status: "blocked" }).eq("id", ft.id)
-          changes.push(`${ft.name}: ${ft.status} → blocked`)
-          updatesApplied++
-        }
-      }
+  // 2. Calculate per-frente stats
+  const stats = frentes?.map((f) => {
+    const tasks = frenteTasks?.filter((t) => t.frente_id === f.id) ?? []
+    const done = tasks.filter((t) => t.status === "done").length
+    const inProgress = tasks.filter((t) => t.status === "in-progress").length
+    const blocked = tasks.filter((t) => t.status === "blocked").length
+    return {
+      frente: f.name,
+      total: tasks.length,
+      done,
+      inProgress,
+      blocked,
+      progress: tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0,
     }
-  }
+  })
 
-  // Generate report
-  const allTasks = [...frenteTasks, ...adHocTasks]
-  const doneCount = allTasks.filter((t) => t.status === "done").length
-  const inProgressCount = allTasks.filter((t) => t.status === "in-progress").length
-  const blockedCount = allTasks.filter((t) => t.status === "blocked").length
-  const kDone = kanbanTasks.filter((t) => t.status === "done").length
-  const kPending = kanbanTasks.filter((t) => t.status === "pending").length
-  const kInProgress = kanbanTasks.filter((t) => t.status === "in-progress").length
-  const kBlocked = kanbanTasks.filter((t) => t.status === "blocked").length
+  const totalTasks = (frenteTasks?.length ?? 0) + (adhocTasks?.length ?? 0)
+  const totalDone = [
+    ...(frenteTasks ?? []),
+    ...(adhocTasks ?? []),
+  ].filter((t) => t.status === "done").length
 
-  const proativa = adHocTasks.filter((t) => t.origin === "proativa").length
-  const reativa = adHocTasks.filter((t) => t.origin === "reativa").length
+  const currentWeek = getCurrentWeek()
+  const kanbanWeek = kanbanTasks?.filter((t) => t.week === currentWeek) ?? []
 
-  const now = new Date()
-  const dateStr = now.toLocaleDateString("pt-BR")
-  const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+  // 3. Fetch last review for comparison
+  const { data: lastReview } = await supabase
+    .from("daily_reviews")
+    .select("report_md, date")
+    .order("date", { ascending: false })
+    .limit(1)
+    .single()
 
-  // Find upcoming deadlines
-  const upcoming = [...adHocTasks, ...kanbanTasks]
-    .filter((t) => t.deadline && t.status !== "done")
-    .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime())
-    .slice(0, 3)
+  // 4. Generate report with Claude Sonnet
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-  const report = `# Revisão Diária — ${dateStr}
-*Gerado automaticamente às ${timeStr}*
+  const prompt = `Você é o assistente de gestão estratégica do Rafael, CXO da Ivoire.
+Analise o estado atual do plano de 90 dias e gere uma revisão diária em português.
 
-## O que mudou
-${changes.length > 0 ? changes.map((c) => `- ${c}`).join("\n") : "Nenhuma atualização necessária."}
+ESTADO ATUAL:
+- Progresso geral: ${totalDone}/${totalTasks} tarefas concluídas (${totalTasks > 0 ? Math.round((totalDone / totalTasks) * 100) : 0}%)
+- Tarefas operacionais esta semana: ${kanbanWeek.length} (${kanbanWeek.filter((t) => t.status === "done").length} concluídas)
+- Semana atual: ${currentWeek}/12
 
-## Inconsistências identificadas
-${blockedCount > 0 ? `- ${blockedCount} tarefa(s) travada(s) no plano` : "- Nenhuma inconsistência crítica identificada."}
-${Math.abs(proativa - reativa) / Math.max(proativa + reativa, 1) > 0.6 ? `- Desequilíbrio proativa/reativa: ${proativa}/${reativa}` : ""}
+POR FRENTE:
+${stats?.map((s) => `- ${s.frente}: ${s.progress}% (${s.done}/${s.total} concluídas, ${s.inProgress} em andamento, ${s.blocked} travadas)`).join("\n")}
 
-## Snapshot da semana ${week}
-- Tarefas ativas no plano: ${inProgressCount}
-- Concluídas (total): ${doneCount}
-- Kanban: ${kPending} a fazer / ${kInProgress} em andamento / ${kDone} concluídas / ${kBlocked} travadas
-- Ratio proativa/reativa: ${proativa}/${reativa}
+${lastReview ? `RELATÓRIO ANTERIOR (${lastReview.date}):\n${lastReview.report_md.slice(0, 500)}...` : "Primeiro relatório do período."}
 
-## Próximos vencimentos
-${upcoming.length > 0 ? upcoming.map((t) => `- ${t.name} — ${t.deadline}`).join("\n") : "Nenhum vencimento próximo."}
-`
+Gere um relatório conciso com:
+1. **Situação geral** — 2-3 frases sobre o momento do plano
+2. **Destaque positivo** — o que avançou bem
+3. **Atenção necessária** — frentes travadas ou atrasadas (seja direto)
+4. **Foco para amanhã** — 2-3 prioridades concretas
 
-  // Save report
-  try {
-    fs.writeFileSync(path.join(process.cwd(), "revisao-diaria.md"), report, "utf-8")
-  } catch {
-    // In serverless, fs write may not persist — that's OK
-  }
+Tom: direto, honesto, sem enrolação. Máximo 300 palavras.`
 
-  return NextResponse.json({ success: true, updatesApplied, report })
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: prompt }],
+  })
+
+  const reportMd = message.content[0].type === "text" ? message.content[0].text : ""
+
+  // 5. Save to database
+  await supabase.from("daily_reviews").insert({
+    date: new Date().toISOString().split("T")[0],
+    week_number: currentWeek,
+    report_md: reportMd,
+    stats,
+  })
+
+  return NextResponse.json({ ok: true, report: reportMd })
 }

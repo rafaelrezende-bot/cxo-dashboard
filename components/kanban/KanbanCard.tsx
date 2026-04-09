@@ -1,6 +1,6 @@
 "use client"
 
-import { useSortable } from "@dnd-kit/sortable"
+import { useDraggable } from "@dnd-kit/core"
 import { CSS } from "@dnd-kit/utilities"
 import { X } from "lucide-react"
 import type { KanbanTask, Frente } from "@/types"
@@ -24,11 +24,14 @@ function getDeadlineColor(deadline: string | null): string {
 }
 
 export function KanbanCard({ task, frentes, onClick, onDelete }: KanbanCardProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id })
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: task.id,
+  })
+
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
     opacity: isDragging ? 0.5 : 1,
+    touchAction: "none" as const,
   }
 
   const frente = task.frente_id ? frentes.find((f) => f.id === task.frente_id) : null
@@ -37,9 +40,9 @@ export function KanbanCard({ task, frentes, onClick, onDelete }: KanbanCardProps
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
       {...listeners}
-      className="group bg-brand-surface2 border border-brand-border rounded-lg p-3 cursor-grab active:cursor-grabbing hover:border-brand-muted/50 transition-colors"
+      {...attributes}
+      className="group bg-brand-surface2 border border-brand-border rounded-lg p-3 mb-2 cursor-grab active:cursor-grabbing hover:border-brand-muted/50 transition-colors"
       onClick={(e) => { e.stopPropagation(); onClick() }}
     >
       {frente && (

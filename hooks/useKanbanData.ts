@@ -82,6 +82,13 @@ export function useKanbanData(week: number) {
     }
   }, [items])
 
+  const updatePlanTask = async (planItemId: string, updates: { status: string; note: string }) => {
+    const realId = planItemId.replace("plan_", "")
+    const { error } = await supabase.from("frente_tasks").update(updates).eq("id", realId)
+    if (!error) fetchAll()
+    return error
+  }
+
   const createTask = async (task: Omit<KanbanTask, "id" | "created_at">) => {
     const { error } = await supabase.from("kanban_tasks").insert(task)
     if (!error) fetchAll()
@@ -100,5 +107,5 @@ export function useKanbanData(week: number) {
     return error
   }
 
-  return { items, loading, moveItem, createTask, updateTask, deleteTask, refetch: fetchAll }
+  return { items, loading, moveItem, updatePlanTask, createTask, updateTask, deleteTask, refetch: fetchAll }
 }

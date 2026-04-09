@@ -15,10 +15,11 @@ const columnColors: Record<Status, string> = {
 interface KanbanColumnProps {
   status: Status
   items: KanbanItem[]
+  onClickItem: (item: KanbanItem) => void
   onAddTask: () => void
 }
 
-export function KanbanColumn({ status, items, onAddTask }: KanbanColumnProps) {
+export function KanbanColumn({ status, items, onClickItem, onAddTask }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status })
 
   return (
@@ -39,7 +40,7 @@ export function KanbanColumn({ status, items, onAddTask }: KanbanColumnProps) {
 
       <div className="min-h-[60px]">
         {items.map((item) => (
-          <KanbanCard key={item.id} item={item} />
+          <KanbanCard key={item.id} item={item} onClick={() => onClickItem(item)} />
         ))}
         {items.length === 0 && (
           <p className="text-brand-muted text-[11px] text-center py-8">Nenhuma tarefa</p>

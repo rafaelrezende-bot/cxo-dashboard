@@ -6,6 +6,7 @@ import type { KanbanItem } from "@/types"
 
 interface KanbanCardProps {
   item: KanbanItem
+  onClick: () => void
 }
 
 function getDeadlineColor(deadline: string): string {
@@ -18,7 +19,7 @@ function getDeadlineColor(deadline: string): string {
   return "text-brand-muted bg-brand-surface2"
 }
 
-export function KanbanCard({ item }: KanbanCardProps) {
+export function KanbanCard({ item, onClick }: KanbanCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: item.id,
   })
@@ -30,12 +31,13 @@ export function KanbanCard({ item }: KanbanCardProps) {
         transform: CSS.Transform.toString(transform),
         opacity: isDragging ? 0.5 : 1,
         touchAction: "none",
-        borderLeft: item.source === "plan" && item.frente_color
+        borderLeft: item.frente_color
           ? `3px solid ${item.frente_color}`
           : "3px solid transparent",
       }}
       {...listeners}
       {...attributes}
+      onClick={(e) => { e.stopPropagation(); onClick() }}
       className="bg-brand-surface2 rounded-lg p-3 mb-2 cursor-grab active:cursor-grabbing hover:border-brand-muted/50 transition-colors"
     >
       <p className={`text-sm text-brand-text leading-snug ${item.status === "done" ? "line-through opacity-50" : ""}`}>
@@ -43,8 +45,8 @@ export function KanbanCard({ item }: KanbanCardProps) {
       </p>
 
       <div className="flex items-center gap-1.5 flex-wrap mt-2">
-        {/* Badge de frente — tarefas do plano */}
-        {item.source === "plan" && item.frente_name && (
+        {/* Badge de frente */}
+        {item.frente_name && (
           <span
             className="text-[10px] px-1.5 py-0.5 rounded"
             style={{ backgroundColor: (item.frente_color || "#666") + "33", color: item.frente_color }}
@@ -60,7 +62,7 @@ export function KanbanCard({ item }: KanbanCardProps) {
           </span>
         )}
 
-        {/* Deadline — tarefas operacionais */}
+        {/* Deadline */}
         {item.deadline && (
           <span className={`text-[10px] px-1.5 py-0.5 rounded ${getDeadlineColor(item.deadline)}`}>
             {new Date(item.deadline + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}

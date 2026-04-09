@@ -22,14 +22,23 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 100,
-        system: `Você é um classificador de tarefas para o painel de CXO da Ivoire.
-Dado o nome de uma tarefa, classifique em uma das 6 frentes estratégicas:
-- piloto: projetos piloto Agent First, baselines, implementação nos clientes
-- educacao: workshops de IA, diagnóstico cultural, formulários, aculturamento
-- socios: alinhamento com sócios, apresentações estratégicas, relatórios
-- pipeline: propostas comerciais, prospects, vendas próprias, novos clientes
-- cx: templates de diagnóstico, métricas CX, NPS, experiência do cliente
-- ia: biblioteca de prompts, ferramentas de IA, licenças, automações internas
+        system: `Você é um classificador de tarefas para o painel de CXO da Ivoire Agency.
+Dado o nome de uma tarefa, classifique em UMA das 6 frentes estratégicas abaixo.
+
+Frentes (use exatamente estes IDs):
+
+- piloto: "Agent First" — aplicação da metodologia Agent First em projetos da agência. Exemplos: "Aplicar Agent First no projeto Newtrade", "Documentar baseline de custo do piloto", "Imersão no projeto Meta", "Escalar metodologia para novos projetos".
+
+- educacao: "Educação IA" — aculturamento, diagnóstico cultural, workshops e processos com IA dentro da empresa. Exemplos: "Formulário diagnóstico para o time", "Conversas qualitativas com colaboradores", "Workshop de IA para área comercial", "Newsletter interna sobre IA".
+
+- socios: "Alinhamento com Sócios" — governança, estrutura societária, reuniões estratégicas internas. Exemplos: "Reunião semanal com sócios", "Apresentar plano estratégico ao board", "Negociar alocação de tempo com diretoria", "Relatório consolidado 90 dias".
+
+- pipeline: "Pipeline & Vendas Próprias" — prospecção, propostas comerciais, novos clientes. Exemplos: "Proposta para novo cliente", "Preparar apresentação comercial Conar", "Retomar conversa com prospect Aviva", "Fechar primeiro projeto próprio".
+
+- cx: "CX & Templates Agent First" — experiência do cliente, templates de entrega, métricas de satisfação. Exemplos: "Adaptar template de diagnóstico", "Implantar métricas NPS", "Primeiro diagnóstico Agent First entregue", "Padronizar entregáveis do núcleo".
+
+- custos: "Corte de Custos" — redução de custos, eficiência operacional, renegociações. Exemplos: "Revisar processo do cliente Bourbon para cortar custos", "Renegociar contrato de ferramentas", "Mapear despesas recorrentes", "Automatizar processo manual para economizar".
+
 Responda APENAS com JSON: { "frente_id": string, "confidence": number }
 Se não conseguir classificar com confiança > 0.4, retorne { "frente_id": null, "confidence": 0 }`,
         messages: [{ role: "user", content: taskName }],

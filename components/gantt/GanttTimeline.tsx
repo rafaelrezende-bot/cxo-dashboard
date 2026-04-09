@@ -57,7 +57,7 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
   return (
     <div className="bg-brand-surface border border-brand-border rounded-xl overflow-hidden">
       {/* Month headers */}
-      <div className="grid" style={{ gridTemplateColumns: "minmax(200px, auto) 1fr" }}>
+      <div className="grid" style={{ gridTemplateColumns: "260px 1fr" }}>
         <div className="bg-brand-surface2 border-b border-r border-brand-border px-4 py-2" />
         <div className="grid grid-cols-3 border-b border-brand-border">
           {([1, 2, 3] as const).map((m) => (
@@ -69,7 +69,7 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
       </div>
 
       {/* Week headers */}
-      <div className="grid" style={{ gridTemplateColumns: "minmax(200px, auto) 1fr" }}>
+      <div className="grid" style={{ gridTemplateColumns: "260px 1fr" }}>
         <div className="bg-brand-surface2 border-b border-r border-brand-border px-4 py-2 text-[11px] text-brand-muted">
           Frente / Tarefa
         </div>
@@ -103,13 +103,13 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
             {/* Frente header */}
             <div
               className="grid cursor-pointer hover:bg-brand-surface2/50 transition-colors"
-              style={{ gridTemplateColumns: "minmax(200px, auto) 1fr" }}
+              style={{ gridTemplateColumns: "260px 1fr" }}
               onClick={() => toggleCollapse(frente.id)}
             >
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-r border-brand-border">
+              <div className="flex items-center gap-2 px-4 border-b border-r border-brand-border h-10">
                 <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: frente.color }} />
                 {isCollapsed ? <ChevronRight size={14} className="text-brand-muted flex-shrink-0" /> : <ChevronDown size={14} className="text-brand-muted flex-shrink-0" />}
-                <span className="text-sm font-medium text-brand-text whitespace-normal break-words" title={frente.name}>{frente.name}</span>
+                <span className="text-sm font-medium text-brand-text truncate" style={{ maxWidth: '160px' }} title={frente.name}>{frente.name}</span>
                 <span className="ml-auto text-[10px] text-brand-muted flex-shrink-0">{progress}%</span>
                 <div className="w-12 h-1.5 bg-brand-border rounded-full overflow-hidden flex-shrink-0">
                   <div className="h-full bg-brand-green rounded-full transition-all" style={{ width: `${progress}%` }} />
@@ -129,12 +129,12 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
                 <div
                   key={task.id}
                   className="grid cursor-pointer hover:bg-brand-surface2/30 transition-colors"
-                  style={{ gridTemplateColumns: "minmax(200px, auto) 1fr" }}
+                  style={{ gridTemplateColumns: "260px 1fr" }}
                   onClick={() => setEditingFrenteTask(task)}
                 >
-                  <div className="flex items-center gap-2 px-4 py-2.5 border-b border-r border-brand-border pl-8">
+                  <div className="flex items-center gap-2 px-4 border-b border-r border-brand-border pl-8 h-10">
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_CONFIG[task.status].dotClass}`} />
-                    <span className="text-xs text-brand-text whitespace-normal break-words" title={task.name}>{task.name}</span>
+                    <span className="text-xs text-brand-text truncate" style={{ minWidth: 0 }} title={task.name}>{task.name}</span>
                     {task.note && <FileText size={10} className="text-brand-muted flex-shrink-0" />}
                   </div>
                   <div className="relative border-b border-brand-border">
@@ -170,12 +170,12 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
                   <div
                     key={task.id}
                     className="grid cursor-pointer hover:bg-brand-surface2/30 transition-colors"
-                    style={{ gridTemplateColumns: "minmax(200px, auto) 1fr" }}
+                    style={{ gridTemplateColumns: "260px 1fr" }}
                     onClick={() => setEditingAdHoc({ id: task.id, name: task.name, status: task.status, note: task.note })}
                   >
-                    <div className="flex items-center gap-2 px-4 py-2.5 border-b border-r border-brand-border pl-8">
+                    <div className="flex items-center gap-2 px-4 border-b border-r border-brand-border pl-8 h-10">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_CONFIG[task.status].dotClass}`} />
-                      <span className="text-xs text-brand-text whitespace-normal break-words italic" title={task.name}>{task.name}</span>
+                      <span className="text-xs text-brand-text truncate italic" style={{ minWidth: 0 }} title={task.name}>{task.name}</span>
                       <span className={`text-[9px] px-1 rounded flex-shrink-0 ${task.origin === "proativa" ? "text-brand-accent bg-brand-accent/10" : "text-brand-orange bg-brand-orange/10"}`}>
                         {task.origin}
                       </span>

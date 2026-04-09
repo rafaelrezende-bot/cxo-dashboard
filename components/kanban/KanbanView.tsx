@@ -5,11 +5,9 @@ import { DndContext, DragEndEvent, DragOverlay, PointerSensor, useSensor, useSen
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react"
 import { useKanbanData } from "@/hooks/useKanbanData"
 import { getCurrentWeek, getWeekStartDate, getWeekEndDate, formatShortDate } from "@/lib/dates"
-import { FRENTE_MAP } from "@/lib/frentes"
 import type { Status, KanbanItem } from "@/types"
 import { KanbanColumn } from "./KanbanColumn"
-import { KanbanTaskModal } from "./KanbanTaskModal"
-import { PlanTaskModal } from "./PlanTaskModal"
+import { TaskModal, TaskModalData } from "@/components/TaskModal"
 import { DayView } from "./DayView"
 
 const columns: Status[] = ["pending", "in-progress", "done", "blocked"]
@@ -22,12 +20,14 @@ export function KanbanView() {
     }
     return getCurrentWeek()
   })
-  const { items, loading, moveItem, updatePlanTask, createTask, updateTask, deleteTask } = useKanbanData(week)
+  const { items, loading, moveItem, updatePlanTask, deletePlanTask, createTask, updateTask, deleteTask } = useKanbanData(week)
 
-  // Modal state
-  const [createModal, setCreateModal] = useState<{ initialStatus: Status } | null>(null)
-  const [editOpModal, setEditOpModal] = useState<KanbanItem | null>(null)
-  const [editPlanModal, setEditPlanModal] = useState<KanbanItem | null>(null)
+  const [modal, setModal] = useState<{
+    mode: "create" | "edit"
+    taskType: "plan" | "operational"
+    item?: KanbanItem
+    initialStatus?: Status
+  } | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
@@ -49,16 +49,61 @@ export function KanbanView() {
   }, [moveItem])
 
   const handleClickItem = (item: KanbanItem) => {
-    if (item.source === "plan") {
-      setEditPlanModal(item)
-    } else {
-      setEditOpModal(item)
-    }
+    setModal({
+      mode: "edit",
+      taskType: item.source === "plan" ? "plan" : "operational",
+      item,
+    })
   }
 
-  const frentes = Object.entries(FRENTE_MAP).map(([id, { color, name }]) => ({
-    id, name, color, order_index: 0,
-  }))
+  const handleSave = async (data: TaskModalData) => {
+    if (!modal) return
+    if (modal.mode === "create") {
+      await createTask({
+        name: data.name,
+        status: data.status,
+        category: (data.category || null) as "comercial" | "cliente" | "interno" | "admin" | null,
+        frente_id: data.frente_id || null,
+        frente_auto_classified: false,
+        frente_manual_override: false,
+        week,
+        deadline: data.deadline || null,
+        updated_at: new Date().toISOString(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+    } else if (modal.item) {
+      if (modal.taskType === "plan") {
+        await updatePlanTask(modal.item.id, {
+          name: data.name,
+          status: data.status,
+          frente_id: data.frente_id || modal.item.frente_id,
+          start_week: data.start_week,
+          end_week: data.end_week,
+          note: data.note || "",
+        })
+      } else {
+        await updateTask(modal.item.id, {
+          name: data.name,
+          status: data.status,
+          category: (data.category || null) as "comercial" | "cliente" | "interno" | "admin" | null,
+          frente_id: data.frente_id || null,
+          deadline: data.deadline || null,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any)
+      }
+    }
+    setModal(null)
+  }
+
+  const handleDelete = async () => {
+    if (!modal?.item) return
+    if (modal.taskType === "plan") {
+      await deletePlanTask(modal.item.id)
+    } else {
+      await deleteTask(modal.item.id)
+    }
+    setModal(null)
+  }
 
   const opTasksForDayView = items
     .filter((i) => i.source === "operational")
@@ -107,7 +152,7 @@ export function KanbanView() {
           </button>
         </div>
         <button
-          onClick={() => setCreateModal({ initialStatus: "pending" })}
+          onClick={() => setModal({ mode: "create", taskType: "operational", initialStatus: "pending" })}
           className="flex items-center gap-1.5 px-4 py-2 bg-brand-accent text-white text-sm font-medium rounded-lg hover:opacity-90"
         >
           <Plus size={16} />
@@ -128,7 +173,7 @@ export function KanbanView() {
               status={status}
               items={items.filter((i) => i.status === status)}
               onClickItem={handleClickItem}
-              onAddTask={() => setCreateModal({ initialStatus: status })}
+              onAddTask={() => setModal({ mode: "create", taskType: "operational", initialStatus: status })}
             />
           ))}
         </div>
@@ -144,70 +189,25 @@ export function KanbanView() {
       {/* Day View */}
       <DayView tasks={opTasksForDayView} week={week} />
 
-      {/* Create modal — operational tasks only */}
-      {createModal && (
-        <KanbanTaskModal
-          mode="create"
-          initialStatus={createModal.initialStatus}
-          frentes={frentes}
-          onSave={(data) => {
-            createTask({
-              name: data.name,
-              status: data.status,
-              category: data.category,
-              frente_id: data.frente_id,
-              frente_auto_classified: data.frente_auto_classified,
-              frente_manual_override: data.frente_manual_override,
-              week,
-              deadline: data.deadline,
-              updated_at: new Date().toISOString(),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any)
-            setCreateModal(null)
-          }}
-          onClose={() => setCreateModal(null)}
-        />
-      )}
-
-      {/* Edit modal — operational tasks */}
-      {editOpModal && (
-        <KanbanTaskModal
-          mode="edit"
-          initialName={editOpModal.name}
-          initialStatus={editOpModal.status as Status}
-          initialCategory={(editOpModal.category || null) as "comercial" | "cliente" | "interno" | "admin" | null}
-          initialFrenteId={editOpModal.frente_id || null}
-          initialDeadline={editOpModal.deadline || null}
-          frentes={frentes}
-          onSave={(data) => {
-            updateTask(editOpModal.id, {
-              name: data.name,
-              status: data.status,
-              category: data.category,
-              frente_id: data.frente_id,
-              deadline: data.deadline,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } as any)
-            setEditOpModal(null)
-          }}
-          onDelete={() => { deleteTask(editOpModal.id); setEditOpModal(null) }}
-          onClose={() => setEditOpModal(null)}
-        />
-      )}
-
-      {/* Edit modal — plan tasks (status + note only) */}
-      {editPlanModal && (
-        <PlanTaskModal
-          taskName={editPlanModal.name}
-          frenteName={editPlanModal.frente_name}
-          frenteColor={editPlanModal.frente_color}
-          currentStatus={editPlanModal.status as Status}
-          currentNote=""
-          onSave={(status, note) => {
-            updatePlanTask(editPlanModal.id, { status, note })
-            setEditPlanModal(null)
-          }}
-          onClose={() => setEditPlanModal(null)}
+      {/* Unified TaskModal */}
+      {modal && (
+        <TaskModal
+          mode={modal.mode}
+          taskType={modal.taskType}
+          initialData={
+            modal.item
+              ? {
+                  name: modal.item.name,
+                  status: modal.item.status as Status,
+                  frente_id: modal.item.frente_id,
+                  deadline: modal.item.deadline,
+                  category: modal.item.category,
+                }
+              : { status: modal.initialStatus || "pending" }
+          }
+          onSave={handleSave}
+          onDelete={modal.mode === "edit" ? handleDelete : undefined}
+          onClose={() => setModal(null)}
         />
       )}
     </div>

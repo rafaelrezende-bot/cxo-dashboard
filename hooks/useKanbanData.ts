@@ -82,9 +82,16 @@ export function useKanbanData(week: number) {
     }
   }, [items])
 
-  const updatePlanTask = async (planItemId: string, updates: { status: string; note: string }) => {
+  const updatePlanTask = async (planItemId: string, updates: Record<string, unknown>) => {
     const realId = planItemId.replace("plan_", "")
     const { error } = await supabase.from("frente_tasks").update(updates).eq("id", realId)
+    if (!error) fetchAll()
+    return error
+  }
+
+  const deletePlanTask = async (planItemId: string) => {
+    const realId = planItemId.replace("plan_", "")
+    const { error } = await supabase.from("frente_tasks").delete().eq("id", realId)
     if (!error) fetchAll()
     return error
   }
@@ -107,5 +114,5 @@ export function useKanbanData(week: number) {
     return error
   }
 
-  return { items, loading, moveItem, updatePlanTask, createTask, updateTask, deleteTask, refetch: fetchAll }
+  return { items, loading, moveItem, updatePlanTask, deletePlanTask, createTask, updateTask, deleteTask, refetch: fetchAll }
 }

@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, FileText } from "lucide-react"
 import type { Frente, FrenteTask, AdHocTask, Status } from "@/types"
 import { getCurrentWeek, getWeekStartDate, formatShortDate, getMonthLabel } from "@/lib/dates"
 import { STATUS_CONFIG } from "@/lib/status"
-import { TaskEditModal } from "./TaskEditModal"
+import { TaskModal, TaskModalData } from "@/components/TaskModal"
 
 interface GanttTimelineProps {
   frentes: Frente[]
@@ -38,12 +38,11 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
     return {}
   })
 
-  // Full task editing for frente_tasks
-  const [editingFrenteTask, setEditingFrenteTask] = useState<FrenteTask | null>(null)
-
-  // Simple status+note editing for adhoc_tasks (unchanged)
-  const [editingAdHoc, setEditingAdHoc] = useState<{
-    id: string; name: string; status: Status; note: string
+  const [editingTask, setEditingTask] = useState<{
+    id: string
+    taskType: "plan" | "operational"
+    source: "frente" | "adhoc"
+    data: Partial<TaskModalData>
   } | null>(null)
 
   const toggleCollapse = useCallback((frenteId: string) => {
@@ -130,7 +129,12 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
                   key={task.id}
                   className="grid cursor-pointer hover:bg-brand-surface2/30 transition-colors"
                   style={{ gridTemplateColumns: "260px 1fr" }}
-                  onClick={() => setEditingFrenteTask(task)}
+                  onClick={() => setEditingTask({
+                    id: task.id,
+                    taskType: "plan",
+                    source: "frente",
+                    data: { name: task.name, status: task.status, frente_id: task.frente_id, start_week: task.start_week, end_week: task.end_week, note: task.note },
+                  })}
                 >
                   <div className="flex items-center gap-2 px-4 border-b border-r border-brand-border pl-8 h-10">
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_CONFIG[task.status].dotClass}`} />
@@ -171,7 +175,12 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
                     key={task.id}
                     className="grid cursor-pointer hover:bg-brand-surface2/30 transition-colors"
                     style={{ gridTemplateColumns: "260px 1fr" }}
-                    onClick={() => setEditingAdHoc({ id: task.id, name: task.name, status: task.status, note: task.note })}
+                    onClick={() => setEditingTask({
+                      id: task.id,
+                      taskType: "plan",
+                      source: "adhoc",
+                      data: { name: task.name, status: task.status, frente_id: task.frente_id, note: task.note },
+                    })}
                   >
                     <div className="flex items-center gap-2 px-4 border-b border-r border-brand-border pl-8 h-10">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_CONFIG[task.status].dotClass}`} />
@@ -218,86 +227,35 @@ export function GanttTimeline({ frentes, frenteTasks, adHocTasks, onUpdateFrente
         </div>
       </div>
 
-      {/* Full edit modal for frente_tasks */}
-      {editingFrenteTask && (
-        <TaskEditModal
-          task={editingFrenteTask}
-          onSave={(updates) => {
-            onUpdateFrenteTask(editingFrenteTask.id, updates)
-            setEditingFrenteTask(null)
+      {/* Unified TaskModal */}
+      {editingTask && (
+        <TaskModal
+          mode="edit"
+          taskType={editingTask.taskType}
+          initialData={editingTask.data}
+          onSave={async (data) => {
+            if (editingTask.source === "adhoc") {
+              onUpdateAdHocTask(editingTask.id, { status: data.status, note: data.note || "" })
+            } else {
+              onUpdateFrenteTask(editingTask.id, {
+                name: data.name,
+                status: data.status,
+                frente_id: data.frente_id,
+                start_week: data.start_week,
+                end_week: data.end_week,
+                note: data.note || "",
+              })
+            }
+            setEditingTask(null)
           }}
-          onDelete={() => {
-            onDeleteFrenteTask(editingFrenteTask.id)
-            setEditingFrenteTask(null)
-          }}
-          onClose={() => setEditingFrenteTask(null)}
+          onDelete={editingTask.source === "frente" ? async () => {
+            onDeleteFrenteTask(editingTask.id)
+            setEditingTask(null)
+          } : undefined}
+          onClose={() => setEditingTask(null)}
         />
-      )}
-
-      {/* Simple adhoc edit modal (status + note only) */}
-      {editingAdHoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setEditingAdHoc(null)}>
-          <div className="bg-brand-surface border border-brand-border rounded-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-brand-text font-semibold text-base whitespace-normal break-words">{editingAdHoc.name}</h3>
-              <button onClick={() => setEditingAdHoc(null)} className="text-brand-muted hover:text-brand-text p-1 flex-shrink-0">
-                <span className="text-lg leading-none">&times;</span>
-              </button>
-            </div>
-            <span className="text-[10px] text-brand-muted bg-brand-surface2 px-2 py-0.5 rounded mb-4 inline-block">Tarefa ad-hoc</span>
-
-            <AdHocEditForm
-              initialStatus={editingAdHoc.status}
-              initialNote={editingAdHoc.note}
-              onSave={(status, note) => {
-                onUpdateAdHocTask(editingAdHoc.id, { status, note })
-                setEditingAdHoc(null)
-              }}
-              onClose={() => setEditingAdHoc(null)}
-            />
-          </div>
-        </div>
       )}
     </div>
   )
 }
 
-// Inline sub-component to avoid separate file for simple status+note edit
-function AdHocEditForm({ initialStatus, initialNote, onSave, onClose }: {
-  initialStatus: Status; initialNote: string
-  onSave: (status: Status, note: string) => void; onClose: () => void
-}) {
-  const [status, setStatus] = useState<Status>(initialStatus)
-  const [note, setNote] = useState(initialNote)
-
-  return (
-    <>
-      <label className="block text-[11px] text-brand-muted uppercase tracking-wider mb-2 mt-3">Status</label>
-      <div className="grid grid-cols-2 gap-2 mb-4">
-        {(Object.entries(STATUS_CONFIG) as [Status, typeof STATUS_CONFIG[Status]][]).map(([key, cfg]) => (
-          <button
-            key={key}
-            onClick={() => setStatus(key)}
-            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
-              status === key ? "border-brand-accent bg-brand-surface2 text-brand-text" : "border-brand-border text-brand-muted hover:text-brand-text"
-            }`}
-          >
-            <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${cfg.dotClass}`} />{cfg.label}
-          </button>
-        ))}
-      </div>
-      <label className="block text-[11px] text-brand-muted uppercase tracking-wider mb-1">Nota</label>
-      <textarea
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        rows={3}
-        className="w-full bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2 text-sm text-brand-text placeholder:text-brand-muted focus:outline-none focus:border-brand-accent resize-none"
-        placeholder="Adicionar nota..."
-      />
-      <div className="flex justify-end gap-2 mt-4">
-        <button onClick={onClose} className="px-4 py-2 text-sm text-brand-muted hover:text-brand-text rounded-lg">Cancelar</button>
-        <button onClick={() => onSave(status, note)} className="px-4 py-2 text-sm font-medium bg-brand-accent text-white rounded-lg hover:opacity-90">Salvar</button>
-      </div>
-    </>
-  )
-}
